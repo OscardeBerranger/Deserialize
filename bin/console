@@ -1,0 +1,226 @@
+#!/usr/bin/env php
+<?php
+
+require_once "vendor/autoload.php";
+use Core\Environment\DotEnv;
+
+if($argv[1] == "serve"){
+    $dotEnv = new DotEnv();
+
+    $environment = $dotEnv->getVariable("ENVIRONMENT");
+
+    if($environment == "prod") {
+        print_r("\n");
+        print_r("Your server started at http:localhost:8080");
+        print_r("\n");
+        shell_exec("php -S localhost:8080 -t public");
+
+    }
+
+    if($environment == "dev") {
+        print_r("\n");
+
+        print_r("\n");
+        print_r("Your profiler started at http:localhost:4372");
+        print_r("\n");
+        $pid = shell_exec("php -S localhost:4372 -t core/Debugging/profiler > /dev/null &");
+        print_r("Your development server started at http:localhost:8080");
+        shell_exec("php -S localhost:8080 -t public");
+
+
+    }
+    print_r("\n");
+    print_r("blah.");
+}
+
+if($argv[1]==="make:entity")
+{
+    print_r("\n");
+    $entityName = readline("Entity Name ? \n");
+
+
+    print_r("\n");
+
+    $tableName = readline("SQL Table Name ? \n");
+
+
+    print_r("\n");
+
+    $properties = array();
+    $properties = addProperty($properties);
+
+
+
+    makeEntityFile($entityName,$tableName, $properties);
+    print_r("\n");
+    print_r("Your Entity was created at src/Entity/${entityName}.php");
+    print_r("\n");
+
+    print_r("\n");
+
+}
+
+if($argv[1]==="make:controller")
+{
+    print_r("\n");
+    $controllerName = readline("Controller Name ?");
+    $controllerFinalName = ucfirst($controllerName)."Controller.php";
+
+
+    touch("src/Controller/${controllerFinalName}");
+    mkdir("templates/".$controllerName);
+    touch("templates/$controllerName/index.test.html");
+    print_r("\n");
+    print_r("Your controller was created as src/Controller/$controllerFinalName");
+    print_r("\n");
+
+    print_r("A new template created as templates/${controllerName}/index.test.html");
+    print_r("\n");
+
+}
+
+function addProperty($properties)
+{
+    $propertyName = readline("What is the name of your property (press enter to stop) ? \n");
+    if ($propertyName === "")
+    {
+        return $properties;
+    }
+    $propertyType = readline("What is the type of your property ? \n");
+    $propertyType = checkType($propertyType);
+    print_r("\n");
+    $properties [] = array(
+        "name"=>$propertyName,
+        "type"=>$propertyType
+    );
+    return addProperty($properties);
+}
+
+function checkType($propertyType)
+{
+    $defaultPropertyTypes = ["int", "string", "array"];
+    if (in_array($propertyType, $defaultPropertyTypes)){
+        return $propertyType;
+    }
+    $NewPropertyType = readline("Wrong type given try another one : ");
+    return checkType($NewPropertyType);
+}
+
+function makeEntityFile($entityName, $tableName, $properties): void
+{
+    $returnedProperties = "";
+    $methodsProperties = "";
+    if ( !file_exists( "src/Entity" ) && !is_dir( "src/Entity" ) ) {
+        mkdir( "src/Entity" );
+    }
+    if ($properties)
+    {
+        foreach ($properties as $property) {
+            $propertyNameCap = ucfirst($property["name"]);
+            $content1 =
+                "
+    #[Column(name: '${property["name"]}')]
+    private ?${property["type"]} $${property["name"]} = null;          
+            ";
+            $returnedProperties = $returnedProperties.$content1;
+
+            $content2 =
+                "
+    public function get${propertyNameCap}(): ?${property["type"]}
+    {
+        return \$this->${property["name"]};
+    }
+    
+    public function set${propertyNameCap}(?${property["type"]} $${property["name"]}): static
+    {
+        \$this->${property["name"]} = $${property["name"]};
+        
+        return \$this;
+    }
+                ";
+            $methodsProperties = $methodsProperties.$content2;
+        }
+    }
+
+
+
+    $entityName = ucfirst($entityName);
+
+    $repoName = $entityName."Repository";
+
+    $entityContent =
+        "<?php
+
+namespace App\Entity;
+
+use App\Repository\\$repoName;
+use Core\Attributes\Column;
+use Core\Attributes\Table;
+use Core\Attributes\TargetRepository;
+
+#[Table(name:'$tableName')]
+#[TargetRepository(name:$repoName::class)]
+class $entityName
+{
+    #[Column(name: 'id')]
+    private ?int \$id = null;
+    $returnedProperties
+    
+    public function getId(): ?int
+    {
+        return \$this->id;
+    }
+    $methodsProperties
+}";
+
+    if (file_exists("src/Entity/${entityName}.php"))
+    {
+        function stringBetweenTwoStrings($str, $starting_word, $ending_word)
+        {
+            $subtring_start = strpos($str, $starting_word);
+            $subtring_start += strlen($starting_word);
+            $size = strpos($str, $ending_word, $subtring_start) - $subtring_start;
+            return substr($str, $subtring_start, $size);
+        }
+
+        $fileContent = file_get_contents("src/Entity/${entityName}.php");
+        $substring = stringBetweenTwoStrings($fileContent, 'id = null;', 'public function getId');
+        $startContent = substr($fileContent, 0, strpos($fileContent, "id = null;"))."id = null;";
+        $newFileContent = $startContent.$substring.$returnedProperties."\n\n";
+        $endFileFirstStep = str_replace($startContent, "", $fileContent);
+        $endFile = str_replace($substring, "", $endFileFirstStep);
+        $newFileContent = $newFileContent.$endFile;
+        //$addMethods = str_replace(substr($newFileContent, -1),"", $newFileContent);
+        //$addMethods = $addMethods.$methodsProperties;
+        //$newFileContent = $newFileContent.$addMethods."}";
+        file_put_contents("src/Entity/${entityName}.php", $newFileContent);
+    } else {
+        $entityFile = fopen("src/Entity/${entityName}.php", "w");
+        fwrite($entityFile,$entityContent);
+        fclose($entityFile);
+    }
+
+
+    if ( !file_exists( "src/Repository" ) && !is_dir( "src/Repository" ) ) {
+        mkdir( "src/Repository" );
+    }
+
+    $repoContent =
+        "<?php 
+\n
+namespace App\Repository;
+\n
+use App\Entity\\$entityName;
+\n
+\n
+class $repoName
+{
+\n
+public function __construct(){}
+}
+        ";
+
+    $repoFile = fopen("src/Repository/${repoName}.php", "w");
+    fwrite($repoFile, $repoContent);
+    fclose($repoFile);
+}
